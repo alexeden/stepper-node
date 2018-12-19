@@ -6,7 +6,7 @@ export enum Commands {
 }
 
 // Registers
-export enum Reg {
+export enum Regs {
   MODE1          = 0x00,
   MODE2          = 0x01,
   SUBADR1        = 0x02,
@@ -45,12 +45,13 @@ export enum BitsMode2 {
 
 
 export class PWM {
-  // Helper method to get a device at the specified address from the I2C bus.
-  // If no i2c bus is specified (i2c param is None) then the default I2C bus
-  // for the platform will be used.
-  // static getI2cDevice(address: number, i2c: I2cBus) {
-  //   return i2c.
-  // }
+  static scaleFreqForWrite(freq: number) {
+    return Math.round((25e6 / (0xfff * freq)) - 1);
+  }
+
+  static scaleFreqFromRead(f: number) {
+    return 25000000 / ((f + 1) * 4096);
+  }
 
   private readonly bus: i2c.I2cBus;
 
@@ -63,31 +64,55 @@ export class PWM {
     console.log(`Bus open`);
     this.setAllChannels(0, 0);
     console.log(`All channels set`);
-    this.bus.writeByteSync(this.address, Reg.MODE2, BitsMode2.OUTDRV);
-    console.log(`${BitsMode2[BitsMode2.OUTDRV]} bit of ${Reg[Reg.MODE2]} set`);
-    this.bus.writeByteSync(this.address, Reg.MODE1, BitsMode1.ALLCALL);
-    console.log(`${BitsMode1[BitsMode1.ALLCALL]} bit of ${Reg[Reg.MODE1]} set`);
+    this.bus.writeByteSync(this.address, Regs.MODE2, BitsMode2.OUTDRV);
+    console.log(`${BitsMode2[BitsMode2.OUTDRV]} bit of ${Regs[Regs.MODE2]} set`);
+    this.bus.writeByteSync(this.address, Regs.MODE1, BitsMode1.ALLCALL);
+    console.log(`${BitsMode1[BitsMode1.ALLCALL]} bit of ${Regs[Regs.MODE1]} set`);
 
     sleep(5);
 
-    let mode1 = this.bus.readByteSync(this.address, Reg.MODE1);
+    let mode1 = this.bus.readByteSync(this.address, Regs.MODE1);
+    console.log(`Read ${Regs[Regs.MODE1]}, has a value of ${mode1.toString(2)}`);
+
     mode1 &= ~BitsMode1.SLEEP; // wake up(reset sleep)
-
-    this.bus.writeByteSync(this.address, Reg.MODE1, mode1);
+    console.log(`Writing ${Regs[Regs.MODE1]}, with a value of ${mode1.toString(2)}`);
+    this.bus.writeByteSync(this.address, Regs.MODE1, mode1);
     sleep(5);
+    console.log(`${Regs[Regs.MODE1]} written`);
 
+    const freq = this.readFreq();
+    console.log(`frequency is ${freq}Hz`);
+    console.log('PWM is ready');
   }
 
   reset() {
-    this.bus.writeByteSync(this.address, Reg.MODE1, Commands.SWRST);
+    this.bus.sendByteSync(Regs.MODE1, Commands.SWRST);
+  }
+
+  writeFreq(freq: number) {
+    console.log('Setting PWM frequency to %d Hz', freq);
+    const scaled = PWM.scaleFreqForWrite(freq);
+    console.log(`Pre-scale value: ${scaled}`);
+
+    const oldmode = this.bus.readByteSync(this.address, Regs.MODE1);
+    const newmode = (oldmode & 0x7F) | 0x10; // sleep
+    this.bus.writeByteSync(this.address, Regs.MODE1, newmode); // go to sleep
+    this.bus.writeByteSync(this.address, Regs.PRESCALE, scaled);
+    this.bus.writeByteSync(this.address, Regs.MODE1, oldmode);
+    sleep(5);
+    this.bus.writeByteSync(this.address, Regs.MODE1, oldmode | 0x80);
+  }
+
+  readFreq() {
+    return PWM.scaleFreqFromRead(this.bus.readByteSync(this.address, Regs.PRESCALE));
   }
 
   setAllChannels(on: number, off: number) {
     // Sets a all PWM channels
-    this.bus.writeByteSync(this.address, Reg.ALL_LED_ON_L, on & 0xFF);
-    this.bus.writeByteSync(this.address, Reg.ALL_LED_ON_H, on >> 8);
-    this.bus.writeByteSync(this.address, Reg.ALL_LED_OFF_L, off & 0xFF);
-    this.bus.writeByteSync(this.address, Reg.ALL_LED_OFF_H, off >> 8);
+    this.bus.writeByteSync(this.address, Regs.ALL_LED_ON_L, on & 0xFF);
+    this.bus.writeByteSync(this.address, Regs.ALL_LED_ON_H, on >> 8);
+    this.bus.writeByteSync(this.address, Regs.ALL_LED_OFF_L, off & 0xFF);
+    this.bus.writeByteSync(this.address, Regs.ALL_LED_OFF_H, off >> 8);
   }
 
 }
