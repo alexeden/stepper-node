@@ -23,6 +23,7 @@
   "author": "Alex Eden",
   "license": "ISC",
   "devDependencies": {
+    "@types/i2c-bus": "^1.0.19",
     "@types/node": "^10.12.17",
     "nodemon": "^1.18.9",
     "rimraf": "^2.6.2",
@@ -31,6 +32,7 @@
     "typescript": "^3.2.2"
   },
   "dependencies": {
+    "i2c-bus": "^4.0.6",
     "raspi-board": "^6.2.0"
   }
 }
