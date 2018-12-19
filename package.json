@@ -7,12 +7,14 @@
   "scripts": {
     "build": "rimraf dist && tsc -p src",
     "sync": "node ./sync.js",
-    "lint": "tslint --project src"
+    "lint": "tslint --project src",
+    "sync-changes": "nodemon --config nodemon.sync-changes.json",
+    "sync-exec": "nodemon --config nodemon.exec-changes.json",
+    "postinstall": "npm run build"
   },
   "keywords": [
     "i2c",
     "iot",
-    "pi",
     "pi",
     "raspberry",
     "rpi",
@@ -22,6 +24,7 @@
   "license": "ISC",
   "devDependencies": {
     "@types/node": "^10.12.17",
+    "nodemon": "^1.18.9",
     "rimraf": "^2.6.2",
     "rsync": "^0.6.1",
     "tslint": "^5.12.0",

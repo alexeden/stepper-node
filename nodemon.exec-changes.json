@@ -1,0 +1,8 @@
+{
+  "ext": "js",
+  "exec": "node dist",
+  "events": {},
+  "watch": [
+    "dist/index.js"
+  ]
+}
