@@ -1,1 +1,3 @@
-console.log('Get to steppin!');
+import { getPins } from 'raspi-board';
+
+console.log('Pins: ', JSON.stringify(getPins(), null, 2));
