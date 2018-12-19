@@ -4,6 +4,14 @@ import { PWM } from './pwm';
 
 // const bus = i2c.openSync(1);
 // console.log(bus.scanSync());
-const pwm = new PWM();
-console.log(pwm);
+(async () => {
+  try {
+    const pwm = await PWM.create();
+    console.log(pwm);
+  }
+  catch (error) {
+    console.error(error);
+  }
+})();
+
 // console.log('Pins: ', JSON.stringify(getPins(), null, 2));

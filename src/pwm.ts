@@ -1,5 +1,5 @@
 import * as i2c from 'i2c-bus';
-import { sleep } from './utils';
+import { wait } from './utils';
 
 export enum Commands {
   SWRST = 0x00,
@@ -43,6 +43,13 @@ export enum BitsMode2 {
   OUTDRV        = 0x04,
 }
 
+// tslint:disable-next-line:ban-types
+// const toPromise = <T = any>(fn: (...args: any[], cb: Function) => any) => (...args: T[]) =>
+//   new Promise((ok, err) => fn(...args, (error: any, data: any) => {
+//     if (error) err(error);
+//     else ok(data);
+//   });
+
 
 export class PWM {
   static scaleFreqForWrite(freq: number) {
@@ -53,66 +60,85 @@ export class PWM {
     return 25000000 / ((f + 1) * 4096);
   }
 
-  private readonly bus: i2c.I2cBus;
+  static async create(
+    address = 0x60,
+    busNum = 1
+  ): Promise<PWM> {
+    const bus = await new Promise<i2c.I2cBus>((ok, err) => {
+      const i2cBus = i2c.open(busNum, error => !!error ? err(error) : ok(i2cBus));
+    });
+    console.log('created bus');
+    const pwm = new PWM(address, bus);
+    await pwm.writeAllChannels(0, 0);
+    await pwm.writeByte(Regs.MODE2, BitsMode2.OUTDRV);
+    await pwm.writeByte(Regs.MODE1, BitsMode1.ALLCALL);
+    await wait(5);
 
-  constructor(
-    readonly address = 0x60,
-    readonly busNum = 1
-  ) {
-    console.log(`Opening bus number ${this.busNum}`);
-    this.bus = i2c.openSync(this.busNum);
-    console.log(`Bus open`);
-    this.setAllChannels(0, 0);
-    console.log(`All channels set`);
-    this.bus.writeByteSync(this.address, Regs.MODE2, BitsMode2.OUTDRV);
-    console.log(`${BitsMode2[BitsMode2.OUTDRV]} bit of ${Regs[Regs.MODE2]} set`);
-    this.bus.writeByteSync(this.address, Regs.MODE1, BitsMode1.ALLCALL);
-    console.log(`${BitsMode1[BitsMode1.ALLCALL]} bit of ${Regs[Regs.MODE1]} set`);
-
-    sleep(5);
-
-    let mode1 = this.bus.readByteSync(this.address, Regs.MODE1);
-    console.log(`Read ${Regs[Regs.MODE1]}, has a value of ${mode1.toString(2)}`);
-
+    let mode1 = await pwm.readByte(Regs.MODE1);
     mode1 &= ~BitsMode1.SLEEP; // wake up(reset sleep)
-    console.log(`Writing ${Regs[Regs.MODE1]}, with a value of ${mode1.toString(2)}`);
-    this.bus.writeByteSync(this.address, Regs.MODE1, mode1);
-    sleep(5);
-    console.log(`${Regs[Regs.MODE1]} written`);
+    await pwm.writeByte(Regs.MODE1, mode1);
+    await wait(5);
 
-    const freq = this.readFreq();
+    const freq = await pwm.readFreq();
     console.log(`frequency is ${freq}Hz`);
     console.log('PWM is ready');
+    return pwm;
   }
 
-  reset() {
-    this.bus.sendByteSync(Regs.MODE1, Commands.SWRST);
+  private constructor(
+    readonly address = 0x60,
+    private readonly bus: i2c.I2cBus
+  ) {}
+
+  writeByte(command: number, byte: number): Promise<void> {
+    return new Promise((ok, err) =>
+      this.bus.writeByte(this.address, command, byte, error => !!error ? err(error) : ok())
+    );
   }
 
-  writeFreq(freq: number) {
+  sendByte(command: number, byte: number): Promise<void> {
+    return new Promise((ok, err) =>
+      this.bus.sendByte(this.address, command, error => !!error ? err(error) : ok())
+    );
+  }
+
+  readByte(command: number): Promise<number> {
+    return new Promise((ok, err) =>
+      this.bus.readByte(this.address, command, (error, value) => !!error ? err(error) : ok(value))
+    );
+  }
+
+  async reset() {
+    return this.sendByte(Regs.MODE1, Commands.SWRST);
+  }
+
+  async writeFreq(freq: number): Promise<number> {
     console.log('Setting PWM frequency to %d Hz', freq);
     const scaled = PWM.scaleFreqForWrite(freq);
     console.log(`Pre-scale value: ${scaled}`);
 
-    const oldmode = this.bus.readByteSync(this.address, Regs.MODE1);
+    const oldmode = await this.readByte(Regs.MODE1);
     const newmode = (oldmode & 0x7F) | 0x10; // sleep
-    this.bus.writeByteSync(this.address, Regs.MODE1, newmode); // go to sleep
-    this.bus.writeByteSync(this.address, Regs.PRESCALE, scaled);
-    this.bus.writeByteSync(this.address, Regs.MODE1, oldmode);
-    sleep(5);
-    this.bus.writeByteSync(this.address, Regs.MODE1, oldmode | 0x80);
+    await this.writeByte(Regs.MODE1, newmode); // go to sleep
+    await this.writeByte(Regs.PRESCALE, scaled);
+    await this.writeByte(Regs.MODE1, oldmode);
+    wait(5);
+    await this.writeByte(Regs.MODE1, oldmode | 0x80);
+    return scaled;
   }
 
-  readFreq() {
-    return PWM.scaleFreqFromRead(this.bus.readByteSync(this.address, Regs.PRESCALE));
+  async readFreq(): Promise<number> {
+    const unscaled = await this.readByte(Regs.PRESCALE);
+    return PWM.scaleFreqFromRead(unscaled);
   }
 
-  setAllChannels(on: number, off: number) {
+  async writeAllChannels(on: number, off: number): Promise<this> {
     // Sets a all PWM channels
-    this.bus.writeByteSync(this.address, Regs.ALL_LED_ON_L, on & 0xFF);
-    this.bus.writeByteSync(this.address, Regs.ALL_LED_ON_H, on >> 8);
-    this.bus.writeByteSync(this.address, Regs.ALL_LED_OFF_L, off & 0xFF);
-    this.bus.writeByteSync(this.address, Regs.ALL_LED_OFF_H, off >> 8);
+    await this.writeByte(Regs.ALL_LED_ON_L, on & 0xFF);
+    await this.writeByte(Regs.ALL_LED_ON_H, on >> 8);
+    await this.writeByte(Regs.ALL_LED_OFF_L, off & 0xFF);
+    await this.writeByte(Regs.ALL_LED_OFF_H, off >> 8);
+    return this;
   }
 
 }
