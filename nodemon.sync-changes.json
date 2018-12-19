@@ -1,6 +1,6 @@
 {
   "ext": "ts,json,cc",
-  "exec": "node sync",
+  "exec": "npm run build && node sync",
   "events": {},
   "watch": [
     "src"
