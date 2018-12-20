@@ -10,7 +10,13 @@ import { Stepper, Direction } from './stepper';
     const pwm = await PWM.create();
     const stepper = new Stepper(pwm);
     console.log(stepper);
-    await stepper.step(Direction.Forward, 100);
+    await stepper.setStrength(0.4);
+    const fResults = await stepper.step(Direction.Forward, 50);
+    console.log('forward fResults: ', fResults);
+    const bResults = await stepper.step(Direction.Backward, 50);
+    console.log('backward results: ', bResults);
+
+    setTimeout(() => stepper.idle(), 5000);
   }
   catch (error) {
     console.error(error);
