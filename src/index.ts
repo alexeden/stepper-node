@@ -13,7 +13,7 @@ import { Stepper, Direction } from './stepper';
     console.log(`pwm frequency is ${freq}Hz`);
     const stepper = new Stepper(pwm);
     console.log(stepper);
-    await stepper.setStrength(0.4);
+    await stepper.setStrength(0.45);
     const fResults = await stepper.step(Direction.Forward, 50);
     console.log('forward fResults: ', fResults);
     const bResults = await stepper.step(Direction.Backward, 50);

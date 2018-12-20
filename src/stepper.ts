@@ -1,5 +1,6 @@
 import { PWM, State, PCA9685 } from './pwm';
 import { Pins } from './pins';
+import { wait } from './utils';
 // import { clampLoop } from './utils';
 
 export enum Direction {
@@ -18,10 +19,16 @@ export enum Direction {
 
 type CoilState = [State, State, State, State];
 
+interface StepResult {
+  steps: number;
+  dir: Direction;
+  duration: number;
+}
+
 const NS_PER_MS = 1e6;
 
 export class Stepper {
-  pps = 100; // pulses per second
+  pps = 1000; // pulses per second
   currentStep = 0;
   // microsteps: 8 | 16 = 8;
   microsteps = 2;
@@ -46,13 +53,9 @@ export class Stepper {
 
   static readonly singleCoilSteps: CoilState[] = [
     [State.On,  State.Off,  State.Off,  State.Off],
-    // [State.On,  State.On,   State.Off,  State.Off],
     [State.Off, State.On,   State.Off,  State.Off],
-    // [State.Off, State.On,   State.On,   State.Off],
     [State.Off, State.Off,  State.On,   State.Off],
-    // [State.Off, State.Off,  State.On,   State.On],
     [State.Off, State.Off,  State.Off,  State.On],
-    // [State.On,  State.Off,  State.Off,  State.On],
   ];
 
   constructor(
@@ -85,54 +88,34 @@ export class Stepper {
   }
 
   async step(dir: Direction, steps: number) {
-    return new Promise(ok => {
-      let count = 0;
-      let retried = 0;
-      const startTime = Stepper.nowInMillis();
-      const run = async () => {
-        if (count >= steps) {
-          clearInterval(timer);
-          const duration = Stepper.nowInMillis() - startTime;
-          ok({ steps: count, dir, duration, retried });
-          return;
-        }
-        if (this.pulsing) {
-          retried += 1;
-          return;
-        }
-
-        this.currentStep = this.getNextStepIndex(dir, Stepper.singleCoilSteps.length);
-        const newState = Stepper.singleCoilSteps[this.currentStep];
-        console.log(newState);
-        await this.updateCoils(newState);
-        count += 1;
-      };
-      // const remaining = wait - (Stepper.nowInMillis() - now);
-      // console.log(`STEPPER: Waiting ${remaining} ms until next step`);
-      const interval = (1 / this.pps) * 1000;
-      const timer = setInterval(run, interval);
-    });
+    const startTime = Stepper.nowInMillis();
+    const interval = (1 / this.pps) * 1000;
+    console.log(`interval is ${interval}ms`);
+    const run = async (count: number): Promise<StepResult> => {
+      if (count >= steps) {
+        const duration = Stepper.nowInMillis() - startTime;
+        return { steps, dir, duration };
+      }
+      const stepStartTime = Stepper.nowInMillis();
+      this.currentStep = this.getNextStepIndex(dir, Stepper.singleCoilSteps.length);
+      const newState = Stepper.singleCoilSteps[this.currentStep];
+      await this.updateCoils(newState);
+      const stepDuration = Stepper.nowInMillis() - stepStartTime;
+      if (stepDuration < interval) {
+        await wait(Math.floor(interval - stepDuration));
+      }
+      return run(count + 1);
+    };
+    return run(0);
   }
 
   private getNextStepIndex(dir: Direction, steps: number): number {
-    // const max = Stepper.singleCoilSteps.length;
-    // this.currentStep =
-    return dir === Direction.Forward
-      ? (this.currentStep + 1) % steps
-      : (this.currentStep - 1 < 0) ? this.currentStep - 1 + steps : this.currentStep - 1;
-    // clampLoop(0, Stepper.singleCoilSteps.length, this.currentStep + (Direction.Forward ? 1 : -1));
-    // (dir === Direction.Forward ? ++this.currentStep : --this.currentStep) % 4;
-    // return Stepper.singleCoilSteps[this.currentStep];
+    if (dir === Direction.Forward) {
+      return (this.currentStep + 1) % steps;
+    }
+    else {
+      const next = this.currentStep - 1;
+      return next + (next < 0 ? steps : 0);
+    }
   }
-  // private getNextState(dir: Direction): CoilState {
-  //   const microsteps = this.microsteps;
-  //   // go to next even half step
-  //   this.currentStep += microsteps * (dir === Direction.Forward ? 1 : -1);
-  //   // for next stepping, we only use the even halfsteps, floor to next even halfstep if necesary
-  //   this.currentStep -= (this.currentStep % microsteps);
-  //   // go to next 'step' and wrap around
-  //   this.currentStep += microsteps * 4;
-  //   this.currentStep %= microsteps * 4;
-  //   return Stepper.doubleCoilSteps[Math.floor(this.currentStep / (microsteps / 2))];
-  // }
 }
