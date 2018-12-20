@@ -1,9 +1,17 @@
 import * as i2c from 'i2c-bus';
 import { wait } from './utils';
+import { Validate } from 'parameter-validation';
 
 export enum Commands {
   SWRST = 0x00,
 }
+
+export enum PCA9685 {
+  Channels = 16,
+  ChannelMin = 0x000,
+  ChannelMax = 0xfff,
+}
+
 
 // Registers
 export enum Regs {
@@ -43,12 +51,8 @@ export enum BitsMode2 {
   OUTDRV        = 0x04,
 }
 
-// tslint:disable-next-line:ban-types
-// const toPromise = <T = any>(fn: (...args: any[], cb: Function) => any) => (...args: T[]) =>
-//   new Promise((ok, err) => fn(...args, (error: any, data: any) => {
-//     if (error) err(error);
-//     else ok(data);
-//   });
+const IsValidChannel = Validate<number>(x => typeof x === 'number', x => x < PCA9685.Channels, x => x >= 0);
+const IsValidChannelValue = Validate<number>(x => typeof x === 'number', x => x <= PCA9685.ChannelMax, x => x >= PCA9685.ChannelMin);
 
 
 export class PWM {
@@ -79,7 +83,7 @@ export class PWM {
     await pwm.writeByte(Regs.MODE1, mode1);
     await wait(5);
 
-    const freq = await pwm.readFreq();
+    const freq = await pwm.getFrequency();
     console.log(`frequency is ${freq}Hz`);
     console.log('PWM is ready');
     return pwm;
@@ -112,7 +116,7 @@ export class PWM {
     return this.sendByte(Regs.MODE1, Commands.SWRST);
   }
 
-  async writeFreq(freq: number): Promise<number> {
+  async setFrequency(freq: number): Promise<number> {
     console.log('Setting PWM frequency to %d Hz', freq);
     const scaled = PWM.scaleFreqForWrite(freq);
     console.log(`Pre-scale value: ${scaled}`);
@@ -127,12 +131,29 @@ export class PWM {
     return scaled;
   }
 
-  async readFreq(): Promise<number> {
+  async getFrequency(): Promise<number> {
     const unscaled = await this.readByte(Regs.PRESCALE);
     return PWM.scaleFreqFromRead(unscaled);
   }
 
-  async writeAllChannels(on: number, off: number): Promise<this> {
+  async writeChannel(
+    @IsValidChannel channel: number,
+    @IsValidChannelValue on: number,
+    @IsValidChannelValue off: number
+  ): Promise<void> {
+
+    // Sets a single PWM channel
+    const offset = 4 * channel;
+    await this.writeByte(Regs.LED0_ON_L + offset, on & 0xFF);
+    await this.writeByte(Regs.LED0_ON_H + offset, on >> 8);
+    await this.writeByte(Regs.LED0_OFF_L + offset, off & 0xFF);
+    await this.writeByte(Regs.LED0_OFF_H + offset, off >> 8);
+  }
+
+  async writeAllChannels(
+    @IsValidChannelValue on: number,
+    @IsValidChannelValue off: number
+  ): Promise<this> {
     // Sets a all PWM channels
     await this.writeByte(Regs.ALL_LED_ON_L, on & 0xFF);
     await this.writeByte(Regs.ALL_LED_ON_H, on >> 8);
