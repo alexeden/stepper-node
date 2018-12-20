@@ -1,6 +1,6 @@
 // import { getPins } from 'raspi-board';
 import { PWM } from './pwm';
-import { Stepper } from './stepper';
+import { Stepper, Direction } from './stepper';
 // import * as i2c from 'i2c-bus';
 
 // const bus = i2c.openSync(1);
@@ -10,6 +10,7 @@ import { Stepper } from './stepper';
     const pwm = await PWM.create();
     const stepper = new Stepper(pwm);
     console.log(stepper);
+    await stepper.step(Direction.Forward, 100);
   }
   catch (error) {
     console.error(error);

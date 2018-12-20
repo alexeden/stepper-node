@@ -12,6 +12,11 @@ export enum PCA9685 {
   ChannelMax = 0xfff,
 }
 
+export enum State {
+  On = 1,
+  Off = 0,
+}
+
 
 // Registers
 export enum Regs {
@@ -128,6 +133,14 @@ export class PWM {
     wait(5);
     await this.writeByte(Regs.MODE1, oldmode | 0x80);
     return scaled;
+  }
+
+  async setPin(
+    @IsValidChannel channel: number,
+    state: State
+  ) {
+    if (state === State.On) await this.writeChannel(channel, 4096, 0);
+    else await this.writeChannel(channel, 0, 4096);
   }
 
   async getFrequency(): Promise<number> {

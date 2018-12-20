@@ -21,7 +21,9 @@ export class Stepper {
   pps = 1000; // pulses per second
   currentStep = 0;
   microsteps: 8 | 16 = 16;
+  current = 1;
   pulsing = false;
+  state: Partial<State> = {};
 
   static nowInMillis() {
     const [s, ns] = process.hrtime();
@@ -39,7 +41,6 @@ export class Stepper {
     [1, 0, 0, 1],
   ];
 
-
   constructor(
     readonly pwm: PWM,
     readonly w1 = Pins.M1,
@@ -47,34 +48,44 @@ export class Stepper {
     readonly stepsPerRev = 200
   ) {}
 
-  lazyPWM<K extends keyof State>(pin: K, newState: State[K], cb) {
+  async lazyPWM<K extends keyof State>(pin: K, newState: State[K]) {
     // Decrement the maximum duty cycle by the rate passed in current
-    const throttledState = newState * options.current;
-    if (undefined === state[pin] || state[pin] !== throttledState) {
-      this.pwm.setPWM(pins[pin], 0, throttledState, (err, res) => {
-        state[pin] = throttledState;
-        cb(err, res);
-      });
-    } else {
-      cb(null);
+    const throttledState = newState * this.current;
+    if (this.state[pin] === undefined || this.state[pin] !== throttledState) {
+      await this.pwm.writeChannel(this.getPinNumber(pin), 0, throttledState);
+      this.state[pin] = throttledState;
     }
-  };
+  }
+
+  async lazyPin<K extends keyof State>(pin: K, newState: State[K]) {
+    if (this.state[pin] === undefined || this.state[pin] !== newState) {
+      await this.pwm.setPin(this.getPinNumber(pin), newState);
+      this.state[pin] = newState;
+    }
+  }
+
+  getPinNumber(key: keyof State): number {
+    switch (key) {
+      case 'PWMA': return this.w1.PWM;
+      case 'AIN2': return this.w1.IN2;
+      case 'AIN1': return this.w1.IN1;
+      case 'PWMB': return this.w2.PWM;
+      case 'BIN2': return this.w2.IN2;
+      case 'BIN1': return this.w2.IN1;
+    }
+  }
 
   // tslint:disable-next-line:ban-types
-  pulse(newState: State, cb: Function) {
+  async pulse(newState: State) {
     this.pulsing = true;
-    async.series([
-      lazyPWM.bind(this, 'PWMA', newState.PWMA),
-      lazyPWM.bind(this, 'PWMB', newState.PWMB),
-      lazyPin.bind(this, 'AIN2', newState.AIN2),
-      lazyPin.bind(this, 'BIN1', newState.BIN1),
-      lazyPin.bind(this, 'AIN1', newState.AIN1),
-      lazyPin.bind(this, 'BIN2', newState.BIN2),
-    ], (err, res) => {
-      this.pulsing = false;
-      cb(err, res);
-    });
-  };
+    await this.lazyPWM('PWMA', newState.PWMA);
+    await this.lazyPWM('PWMB', newState.PWMB);
+    await this.lazyPin('AIN2', newState.AIN2);
+    await this.lazyPin('BIN1', newState.BIN1);
+    await this.lazyPin('AIN1', newState.AIN1);
+    await this.lazyPin('BIN2', newState.BIN2);
+    this.pulsing = false;
+  }
 
   async step(dir: Direction, steps: number) {
     return new Promise((ok, fail) => {
@@ -86,7 +97,7 @@ export class Stepper {
       let now = Stepper.nowInMillis();
       // const startTime = (new Date()).getTime();
       const startTime = now;
-      const run = () => {
+      const run = async () => {
         now = Stepper.nowInMillis();
         if (count >= steps) {
           clearInterval(timer);
@@ -96,23 +107,22 @@ export class Stepper {
             duration: Stepper.nowInMillis() - startTime,
             retried,
           });
-          return null;
+          return;
         }
         if (this.pulsing) {
           console.log('STEPPER: max speed reached, trying to send pulse while previous not finished');
           retried += 1;
           // cb('STEPPER: max speed reached, trying to send pulse while previous not finished');
           // clearInterval(timer);
-          return null;
+          return;
         }
-        oneStep(dir, () => {
-          count += 1;
-          const remaining = wait - (Stepper.nowInMillis() - now);
-          console.log('STEPPER: Waiting %d ms until next step', remaining);
-          now = Stepper.nowInMillis();
-        });
+        const newState = this.single(dir);
+        await this.pulse(newState);
+        count += 1;
+        const remaining = wait - (Stepper.nowInMillis() - now);
+        console.log(`STEPPER: Waiting ${remaining} ms until next step`);
+        now = Stepper.nowInMillis();
 
-        return null;
       };
       const timer = setInterval(run, wait);
     });
@@ -124,7 +134,7 @@ export class Stepper {
     const pwmB = 255;
 
     // go to next even half step
-    if (dir === 'fwd') {
+    if (dir === Direction.Forward) {
       this.currentStep += microsteps;
     }
     else {
