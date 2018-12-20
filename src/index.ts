@@ -8,6 +8,9 @@ import { Stepper, Direction } from './stepper';
 (async () => {
   try {
     const pwm = await PWM.create();
+    await pwm.setFrequency(1700);
+    const freq = await pwm.getFrequency();
+    console.log(`pwm frequency is ${freq}Hz`);
     const stepper = new Stepper(pwm);
     console.log(stepper);
     await stepper.setStrength(0.4);

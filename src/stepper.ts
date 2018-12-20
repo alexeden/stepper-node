@@ -20,9 +20,10 @@ type CoilState = [State, State, State, State];
 const NS_PER_MS = 1e6;
 
 export class Stepper {
-  pps = 100; // pulses per second
+  pps = 10000; // pulses per second
   currentStep = 0;
-  microsteps: 8 | 16 = 8;
+  // microsteps: 8 | 16 = 8;
+  microsteps = 2;
   current = 1;
   pulsing = false;
 
@@ -56,34 +57,12 @@ export class Stepper {
     return pwmValue;
   }
 
-  // async lazyPin<K extends keyof PinState>(pin: K, newState: PinState[K]) {
-  //   if (this.state[pin] === undefined || this.state[pin] !== newState) {
-  //     await this.pwm.setPin(this.getPinNumber(pin), newState);
-  //     this.state[pin] = newState;
-  //   }
-  // }
-
-  // getPinNumber(key: keyof PinState): number {
-  //   switch (key) {
-  //     case 'AIN2': return this.w1.IN2;
-  //     case 'AIN1': return this.w1.IN1;
-  //     case 'BIN2': return this.w2.IN2;
-  //     case 'BIN1': return this.w2.IN1;
-  //   }
-  // }
-
-  // tslint:disable-next-line:ban-types
   async updateCoils([w1in2, w2in1, w1in1, w2in2]: CoilState) {
     this.pulsing = true;
     await this.pwm.setPin(this.w1.IN2, w1in2);
     await this.pwm.setPin(this.w2.IN1, w2in1);
     await this.pwm.setPin(this.w1.IN1, w1in1);
     await this.pwm.setPin(this.w2.IN2, w2in2);
-
-    // await this.lazyPin('AIN2', newState.AIN2);
-    // await this.lazyPin('BIN1', newState.BIN1);
-    // await this.lazyPin('AIN1', newState.AIN1);
-    // await this.lazyPin('BIN2', newState.BIN2);
     this.pulsing = false;
   }
 
@@ -97,10 +76,8 @@ export class Stepper {
     return new Promise(ok => {
       let count = 0;
       let retried = 0;
-      let now = Stepper.nowInMillis();
-      const startTime = now;
+      const startTime = Stepper.nowInMillis();
       const run = async () => {
-        now = Stepper.nowInMillis();
         if (count >= steps) {
           clearInterval(timer);
           const duration = Stepper.nowInMillis() - startTime;
@@ -108,14 +85,13 @@ export class Stepper {
           return;
         }
         if (this.pulsing) {
-          console.log('STEPPER: max speed reached, trying to send updateCoils while previous not finished');
+          // console.log('STEPPER: max speed reached, trying to send updateCoils while previous not finished');
           retried += 1;
           return;
         }
         const newState = this.getNextState(dir);
         await this.updateCoils(newState);
         count += 1;
-        now = Stepper.nowInMillis();
       };
       // const remaining = wait - (Stepper.nowInMillis() - now);
       // console.log(`STEPPER: Waiting ${remaining} ms until next step`);
@@ -126,7 +102,6 @@ export class Stepper {
 
   private getNextState(dir: Direction): CoilState {
     const microsteps = this.microsteps;
-
     // go to next even half step
     this.currentStep += microsteps * (dir === Direction.Forward ? 1 : -1);
     // for next stepping, we only use the even halfsteps, floor to next even halfstep if necesary
@@ -134,20 +109,6 @@ export class Stepper {
     // go to next 'step' and wrap around
     this.currentStep += microsteps * 4;
     this.currentStep %= microsteps * 4;
-
-    // set up coils
-    // const coils =
     return Stepper.step2coils[Math.floor(this.currentStep / (microsteps / 2))];
-
-    // console.log(`SINGLE STEPPING: Coils state = ${coils}, current step: ${this.currentStep}`);
-
-    // return {
-    //   // PWMA: 0xFFF,
-    //   // PWMB: 0xFFF,
-    //   AIN2: coils[0],
-    //   BIN1: coils[1],
-    //   AIN1: coils[2],
-    //   BIN2: coils[3],
-    // };
   }
 }
