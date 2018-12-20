@@ -1,6 +1,6 @@
 import * as i2c from 'i2c-bus';
 import { wait } from './utils';
-import { Validate } from 'parameter-validation';
+import { Validate } from './parameter-validation';
 
 export enum Commands {
   SWRST = 0x00,
@@ -71,7 +71,6 @@ export class PWM {
     const bus = await new Promise<i2c.I2cBus>((ok, err) => {
       const i2cBus = i2c.open(busNum, error => !!error ? err(error) : ok(i2cBus));
     });
-    console.log('created bus');
     const pwm = new PWM(address, bus);
     await pwm.writeAllChannels(0, 0);
     await pwm.writeByte(Regs.MODE2, BitsMode2.OUTDRV);
@@ -141,7 +140,6 @@ export class PWM {
     @IsValidChannelValue on: number,
     @IsValidChannelValue off: number
   ): Promise<void> {
-
     // Sets a single PWM channel
     const offset = 4 * channel;
     await this.writeByte(Regs.LED0_ON_L + offset, on & 0xFF);
@@ -154,7 +152,7 @@ export class PWM {
     @IsValidChannelValue on: number,
     @IsValidChannelValue off: number
   ): Promise<this> {
-    // Sets a all PWM channels
+    // Sets all PWM channels
     await this.writeByte(Regs.ALL_LED_ON_L, on & 0xFF);
     await this.writeByte(Regs.ALL_LED_ON_H, on >> 8);
     await this.writeByte(Regs.ALL_LED_OFF_L, off & 0xFF);
