@@ -1,5 +1,6 @@
 import { PWM, State, PCA9685 } from './pwm';
 import { Pins } from './pins';
+// import { clampLoop } from './utils';
 
 export enum Direction {
   Forward = 'fwd',
@@ -20,7 +21,7 @@ type CoilState = [State, State, State, State];
 const NS_PER_MS = 1e6;
 
 export class Stepper {
-  pps = 10000; // pulses per second
+  pps = 100; // pulses per second
   currentStep = 0;
   // microsteps: 8 | 16 = 8;
   microsteps = 2;
@@ -32,7 +33,7 @@ export class Stepper {
     return (s * 1000) + (ns / NS_PER_MS);
   }
 
-  static readonly step2coils: CoilState[] = [
+  static readonly doubleCoilSteps: CoilState[] = [
     [State.On,  State.Off,  State.Off,  State.Off],
     [State.On,  State.On,   State.Off,  State.Off],
     [State.Off, State.On,   State.Off,  State.Off],
@@ -41,6 +42,17 @@ export class Stepper {
     [State.Off, State.Off,  State.On,   State.On],
     [State.Off, State.Off,  State.Off,  State.On],
     [State.On,  State.Off,  State.Off,  State.On],
+  ];
+
+  static readonly singleCoilSteps: CoilState[] = [
+    [State.On,  State.Off,  State.Off,  State.Off],
+    // [State.On,  State.On,   State.Off,  State.Off],
+    [State.Off, State.On,   State.Off,  State.Off],
+    // [State.Off, State.On,   State.On,   State.Off],
+    [State.Off, State.Off,  State.On,   State.Off],
+    // [State.Off, State.Off,  State.On,   State.On],
+    [State.Off, State.Off,  State.Off,  State.On],
+    // [State.On,  State.Off,  State.Off,  State.On],
   ];
 
   constructor(
@@ -85,11 +97,13 @@ export class Stepper {
           return;
         }
         if (this.pulsing) {
-          // console.log('STEPPER: max speed reached, trying to send updateCoils while previous not finished');
           retried += 1;
           return;
         }
-        const newState = this.getNextState(dir);
+
+        this.currentStep = this.getNextStepIndex(dir, Stepper.singleCoilSteps.length);
+        const newState = Stepper.singleCoilSteps[this.currentStep];
+        console.log(newState);
         await this.updateCoils(newState);
         count += 1;
       };
@@ -100,15 +114,25 @@ export class Stepper {
     });
   }
 
-  private getNextState(dir: Direction): CoilState {
-    const microsteps = this.microsteps;
-    // go to next even half step
-    this.currentStep += microsteps * (dir === Direction.Forward ? 1 : -1);
-    // for next stepping, we only use the even halfsteps, floor to next even halfstep if necesary
-    this.currentStep -= (this.currentStep % microsteps);
-    // go to next 'step' and wrap around
-    this.currentStep += microsteps * 4;
-    this.currentStep %= microsteps * 4;
-    return Stepper.step2coils[Math.floor(this.currentStep / (microsteps / 2))];
+  private getNextStepIndex(dir: Direction, steps: number): number {
+    // const max = Stepper.singleCoilSteps.length;
+    // this.currentStep =
+    return dir === Direction.Forward
+      ? (this.currentStep + 1) % steps
+      : (this.currentStep - 1 < 0) ? this.currentStep - 1 + steps : this.currentStep - 1;
+    // clampLoop(0, Stepper.singleCoilSteps.length, this.currentStep + (Direction.Forward ? 1 : -1));
+    // (dir === Direction.Forward ? ++this.currentStep : --this.currentStep) % 4;
+    // return Stepper.singleCoilSteps[this.currentStep];
   }
+  // private getNextState(dir: Direction): CoilState {
+  //   const microsteps = this.microsteps;
+  //   // go to next even half step
+  //   this.currentStep += microsteps * (dir === Direction.Forward ? 1 : -1);
+  //   // for next stepping, we only use the even halfsteps, floor to next even halfstep if necesary
+  //   this.currentStep -= (this.currentStep % microsteps);
+  //   // go to next 'step' and wrap around
+  //   this.currentStep += microsteps * 4;
+  //   this.currentStep %= microsteps * 4;
+  //   return Stepper.doubleCoilSteps[Math.floor(this.currentStep / (microsteps / 2))];
+  // }
 }
